@@ -1,0 +1,61 @@
+flowchart TD
+    %% -------- Sources --------
+    subgraph Sources["Sources of Facts"]
+        User[User / Operator]
+        YOLO[YOLO / AI Sensors<br>]
+        Seed[seed.sh / Simulation]
+    end
+
+    %% -------- Commands --------
+    subgraph Commands["Command Layer"]
+        CmdAPI[Command API<br>/api/commands]
+    end
+
+    %% -------- Event Store --------
+    subgraph ES["Event Store"]
+        Store[(Append-only<br>Event Log)]
+    end
+
+    %% -------- Projection --------
+    subgraph Projection["Projection Layer"]
+        Projector[State Projector<br>reduce]
+        LotState[Lot State<br>cars + spots]
+    end
+
+    %% -------- Query --------
+    subgraph Query["Query Layer"]
+        QueryAPI[Query API<br>/api/query/state]
+        EventQuery[Event Query<br>/api/query/events]
+    end
+
+    %% -------- Replay --------
+    subgraph Replay["Replay / Streaming"]
+        ReplayAPI[SSE Replay API<br>/api/stream/replay]
+    end
+
+    %% -------- UI --------
+    subgraph UI["Digital Twin UI (SVG)"]
+        Timeline[Timeline Slider<br>time travel]
+        SVG[SVG Parking Lot<br>Digital Twin]
+        Anim[RAF Animation<br>lerp positions]
+    end
+
+    %% -------- Flows --------
+    User --> CmdAPI
+    Seed --> CmdAPI
+    YOLO --> CmdAPI
+
+    CmdAPI -->|append event| Store
+
+    Store --> EventQuery
+    Store --> Projector
+    Projector --> LotState
+    LotState --> QueryAPI
+
+    QueryAPI -->|state at time t| SVG
+    EventQuery -->|event list| Timeline
+
+    Timeline -->|select time| QueryAPI
+
+    Store --> ReplayAPI
+    ReplayAPI -->|event stream| Anim
