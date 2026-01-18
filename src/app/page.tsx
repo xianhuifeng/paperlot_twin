@@ -18,6 +18,24 @@ type LotState = {
   cars: Record<string, { carId: string; pos: XY; status: "IN"; updatedAt: string }>;
   spots: Record<string, { spotId: string; carId: string; since: string }>;
 };
+type Spot = { spotId: string; x: number; y: number; w: number; h: number };
+
+const SPOTS: Spot[] = [
+  { spotId: "S1", x: 20, y: 20, w: 14, h: 10 },
+  { spotId: "S2", x: 38, y: 20, w: 14, h: 10 },
+  { spotId: "S3", x: 56, y: 20, w: 14, h: 10 },
+  { spotId: "S4", x: 74, y: 20, w: 14, h: 10 },
+
+  { spotId: "S5", x: 20, y: 38, w: 14, h: 10 },
+  { spotId: "S6", x: 38, y: 38, w: 14, h: 10 },
+  { spotId: "S7", x: 56, y: 38, w: 14, h: 10 },
+  { spotId: "S8", x: 74, y: 38, w: 14, h: 10 }
+];
+
+const LANES = [
+  { a: { x: 10, y: 60 }, b: { x: 90, y: 60 } },
+  { a: { x: 10, y: 75 }, b: { x: 90, y: 75 } }
+];
 
 
 function clamp(n: number, a: number, b: number) {
@@ -27,6 +45,26 @@ function clamp(n: number, a: number, b: number) {
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
+
+function dwellSeconds(occSinceIso: string, cursorMs: number) {
+  const since = new Date(occSinceIso).getTime();
+  return Math.max(0, Math.floor((cursorMs - since) / 1000));
+}
+
+function fmtDwell(sec: number) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// simple heat ramp by dwell
+function spotFill(occupied: boolean, dwellSec: number) {
+  if (!occupied) return "rgba(80,255,120,0.10)";
+  if (dwellSec < 10) return "rgba(255, 209, 102, 0.35)";   // yellow-ish
+  if (dwellSec < 20) return "rgba(255, 140, 80, 0.35)";    // orange-ish
+  return "rgba(255, 80, 80, 0.38)";                        // red-ish
+}
+
 
 export default function Home() {
   const lotId = "001";
@@ -432,18 +470,7 @@ export default function Home() {
         </div>
 
         {/* Debug */}
-        {/* <div style={{ border: "1px solid rgba(0,0,0,0.12)", borderRadius: 12, padding: 12 }}>
-          <b>State</b>
-          <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6, color: "#111" }}>
-            Lot: {lotId}<br />
-            Time: {state?.time ?? "(none)"}<br />
-            Cars: {state ? Object.keys(state.cars).length : 0}<br />
-            Spots occupied: {state ? Object.keys(state.spots).length : 0}
-          </div>
-          <pre style={{ marginTop: 10, fontSize: 11, whiteSpace: "pre-wrap", color: "#111" }}>
-{JSON.stringify(state, null, 2)}
-          </pre>
-        </div> */}
+
         <div style={{ marginTop: 10 }}>
 					<b>Event Log</b>
 					<div style={{ maxHeight: 220, overflow: "auto", marginTop: 6, border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8 }}>
@@ -475,47 +502,19 @@ export default function Home() {
 							})}
 					</div>
         </div>
+
+        <div style={{ border: "1px solid rgba(0,0,0,0.12)", borderRadius: 12, padding: 12 }}>
+          <b>State</b>
+          <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6, color: "#111" }}>
+            Lot: {lotId}<br />
+            Time: {state?.time ?? "(none)"}<br />
+            Cars: {state ? Object.keys(state.cars).length : 0}<br />
+            Spots occupied: {state ? Object.keys(state.spots).length : 0}
+          </div>
+          <pre style={{ marginTop: 10, fontSize: 11, whiteSpace: "pre-wrap", color: "#111" }}>{JSON.stringify(state, null, 2)}
+          </pre>
+        </div>
       </div>
     </main>
   );
 }
-
-type Spot = { spotId: string; x: number; y: number; w: number; h: number };
-
-const SPOTS: Spot[] = [
-  { spotId: "S1", x: 20, y: 20, w: 14, h: 10 },
-  { spotId: "S2", x: 38, y: 20, w: 14, h: 10 },
-  { spotId: "S3", x: 56, y: 20, w: 14, h: 10 },
-  { spotId: "S4", x: 74, y: 20, w: 14, h: 10 },
-
-  { spotId: "S5", x: 20, y: 38, w: 14, h: 10 },
-  { spotId: "S6", x: 38, y: 38, w: 14, h: 10 },
-  { spotId: "S7", x: 56, y: 38, w: 14, h: 10 },
-  { spotId: "S8", x: 74, y: 38, w: 14, h: 10 }
-];
-
-const LANES = [
-  { a: { x: 10, y: 60 }, b: { x: 90, y: 60 } },
-  { a: { x: 10, y: 75 }, b: { x: 90, y: 75 } }
-];
-  
-
-function dwellSeconds(occSinceIso: string, cursorMs: number) {
-  const since = new Date(occSinceIso).getTime();
-  return Math.max(0, Math.floor((cursorMs - since) / 1000));
-}
-
-function fmtDwell(sec: number) {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-// simple heat ramp by dwell
-function spotFill(occupied: boolean, dwellSec: number) {
-  if (!occupied) return "rgba(80,255,120,0.10)";
-  if (dwellSec < 10) return "rgba(255, 209, 102, 0.35)";   // yellow-ish
-  if (dwellSec < 20) return "rgba(255, 140, 80, 0.35)";    // orange-ish
-  return "rgba(255, 80, 80, 0.38)";                        // red-ish
-}
-

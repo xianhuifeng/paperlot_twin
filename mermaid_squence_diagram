@@ -1,0 +1,62 @@
+sequenceDiagram
+  autonumber
+  actor User
+  participant UI as Next.js UI (SVG Twin)
+  participant Query as Query API (/api/query)
+  participant Cmd as Command API (/api/commands)
+  participant ES as Replay Stream (/api/stream/replay)
+  participant Store as Event Store (append-only)
+  participant Projector as Projector (rebuild state)
+
+  %% --- Page load
+  User->>UI: Open / (load page)
+  UI->>Query: GET /events?lotId=001
+  Query->>Store: read events(lotId=001)
+  Store-->>Query: StoredEvent[]
+  Query-->>UI: { events, count }
+  UI->>UI: compute tMin/tMax, set cursor=tMin
+
+  %% --- Time travel
+  User->>UI: Drag timeline slider (cursor=at)
+  UI->>Query: GET /state?lotId=001&at=ISO
+  Query->>Store: read events(lotId=001, <=at)
+  Store-->>Query: StoredEvent[]
+  Query->>Projector: reduce(events) -> LotState
+  Projector-->>Query: LotState (cars, spots, time)
+  Query-->>UI: { ok:true, state }
+  UI->>UI: render SVG from LotState
+
+  %% --- Replay
+  User->>UI: Click Play
+  UI->>ES: SSE connect /replay?lotId=001&start=ISO&speed=x
+  ES->>Store: read events(lotId=001, >=start)
+  loop for each StoredEvent in order
+    Store-->>ES: StoredEvent
+    ES-->>UI: message(data=StoredEvent)
+    UI->>UI: apply event -> targetsRef + LotState
+    UI->>UI: RAF tick lerp(animPos -> targets) and rerender SVG
+  end
+  ES-->>UI: stream ends / closes
+  UI->>UI: mode=idle
+
+  %% --- Commands (seed.sh or future YOLO)
+  rect rgb(245,245,255)
+    note over Cmd,Store: Writes are append-only (events), never "update state"
+    User->>Cmd: POST /carEnter (or seed.sh)
+    Cmd->>Store: append(CarEntered)
+    Store-->>Cmd: ok(eventId)
+
+    User->>Cmd: POST /spotOccupy
+    Cmd->>Store: append(SpotOccupied)
+    Store-->>Cmd: ok(eventId)
+  end
+
+  %% --- Future sensor integration
+  rect rgb(240,255,240)
+    note over Cmd,Store: YOLO can publish the same domain events
+    participant YOLO as YOLO Detector (future)
+    YOLO->>Cmd: POST /carMoved (from detections)
+    Cmd->>Store: append(CarMoved)
+    Store-->>Cmd: ok(eventId)
+    note over UI,ES: UI can time-travel or replay the same event stream
+  end
