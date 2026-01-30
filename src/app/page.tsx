@@ -99,7 +99,10 @@ export default function Home() {
   const cursorIso = useMemo(() => (cursor ? new Date(cursor).toISOString() : ""), [cursor]);
 	const eventsAtCursor = useMemo(() => {
 		if (!cursor) return events;
-		return events.filter((e) => new Date(e.occurredAt).getTime() <= cursor);
+		return events.filter((e) => {
+			const occurredAt = (e as any).occurredAt || (e as any)._storedAt;
+			return occurredAt ? new Date(occurredAt).getTime() <= cursor : false;
+		});
 	}, [events, cursor]);
 	
   // ---- 1) Load events for bounds
@@ -110,8 +113,10 @@ export default function Home() {
     setEvents(list);
 
     if (list.length > 0) {
-      const min = new Date(list[0].occurredAt).getTime();
-      const max = new Date(list[list.length - 1].occurredAt).getTime();
+      const firstOccurredAt = (list[0] as any).occurredAt || (list[0] as any)._storedAt;
+      const lastOccurredAt = (list[list.length - 1] as any).occurredAt || (list[list.length - 1] as any)._storedAt;
+      const min = new Date(firstOccurredAt).getTime();
+      const max = new Date(lastOccurredAt).getTime();
       setTMin(min);
       setTMax(max);
       setCursor(min);
@@ -126,29 +131,35 @@ export default function Home() {
   // ---- 2) time travel fetch
   async function loadStateAt(ms: number) {
     const at = new Date(ms).toISOString();
-    const res = await fetch(`/api/query/state?lotId=${lotId}&at=${encodeURIComponent(at)}`);
-    const json = await res.json();
-    if (!json?.ok) return;
+    try {
+      const res = await fetch(`/api/query/state?lotId=${lotId}&at=${encodeURIComponent(at)}`);
+      if (!res.ok) return;
+      const json = await res.json();
+      if (!json?.ok) return;
 
     const next = json.state as LotState;
     setState(next);
 
     // sync animation refs
-    const nextTargets = new Map<string, XY>();
+      const nextTargets = new Map<string, XY>();
     const nextAnim = new Map(animRef.current);
 
     for (const [carId, c] of Object.entries(next.cars)) {
-      nextTargets.set(carId, c.pos);
+        nextTargets.set(carId, c.pos);
       if (!nextAnim.has(carId)) nextAnim.set(carId, c.pos); // first time snap
     }
 
     // remove cars that no longer exist
     for (const carId of Array.from(nextAnim.keys())) {
       if (!nextTargets.has(carId)) nextAnim.delete(carId);
-    }
+      }
 
-    targetsRef.current = nextTargets;
-    animRef.current = nextAnim;
+      targetsRef.current = nextTargets;
+      animRef.current = nextAnim;
+    } catch (err) {
+      // Silently handle errors (invalid JSON, network errors, etc.)
+      console.error("Failed to load state:", err);
+    }
   }
 
   // ---- 3) SSE replay
@@ -163,10 +174,12 @@ export default function Home() {
       try {
         const data = JSON.parse(msg.data);
         const stored: StoredEvent = data?.stored ?? data;
-        const ev = stored?.event as LotEvent;
-        if (!ev?.type) return;
+        // Handle both structures: nested (stored.event) or flat (stored itself)
+        const ev = (stored as any).event || stored;
+        if (!ev || !ev.type) return;
 
-        const t = new Date(stored.occurredAt).getTime();
+        const occurredAt = (stored as any).occurredAt || (stored as any)._storedAt;
+        const t = new Date(occurredAt).getTime();
         setCursor(t);
 
         // update targets/anim
@@ -189,7 +202,8 @@ export default function Home() {
 
         // update state (truth used by SVG for spots + labels)
         setState((prev) => {
-          const base: LotState = prev ?? { lotId, time: stored.occurredAt, cars: {}, spots: {} };
+          const occurredAt = (stored as any).occurredAt || (stored as any)._storedAt;
+          const base: LotState = prev ?? { lotId, time: occurredAt, cars: {}, spots: {} };
           const cars = { ...base.cars };
           const spots = { ...base.spots };
 
@@ -208,7 +222,7 @@ export default function Home() {
             if (spots[ev.spotId]?.carId === ev.carId) delete spots[ev.spotId];
           }
 
-          return { lotId, time: stored.occurredAt, cars, spots };
+          return { lotId, time: occurredAt, cars, spots };
         });
       } catch {
         // ignore
@@ -266,9 +280,13 @@ export default function Home() {
 
 	useEffect(() => {
 		if (!cursor || events.length === 0) return;
-		const idx = events.findIndex((e) => new Date(e.occurredAt).getTime() >= cursor);
+		const idx = events.findIndex((e) => {
+			const occurredAt = (e as any).occurredAt || (e as any)._storedAt;
+			return occurredAt ? new Date(occurredAt).getTime() >= cursor : false;
+		});
 		const pick = idx === -1 ? events[events.length - 1] : events[idx];
-		setSelectedEventId(pick.eventId);
+		const eventId = (pick as any).eventId || (pick as any)._id;
+		setSelectedEventId(eventId);
 	}, [cursor, events]);
 	
 
@@ -296,13 +314,16 @@ export default function Home() {
   }
 
   function selectStoredEvent(se: StoredEvent) {
-    setSelectedEventId(se.eventId);
-    const t = new Date(se.occurredAt).getTime();
+    const eventId = (se as any).eventId || (se as any)._id;
+    const occurredAt = (se as any).occurredAt || (se as any)._storedAt;
+    setSelectedEventId(eventId);
+    const t = new Date(occurredAt).getTime();
     setCursor(t);
 
-    const ev = se.event as any;
-    setSelectedCarId(ev.carId ?? null);
-    setSelectedSpotId(ev.spotId ?? null);
+    // Handle both structures: nested (se.event) or flat (se itself)
+    const ev = (se as any).event || se;
+    setSelectedCarId(ev?.carId ?? null);
+    setSelectedSpotId(ev?.spotId ?? null);
   }
 	
 
@@ -475,12 +496,18 @@ export default function Home() {
 					<b>Event Log</b>
 					<div style={{ maxHeight: 220, overflow: "auto", marginTop: 6, border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8 }}>
 						{eventsAtCursor.slice().reverse().map((se) => {
-						const ev = se.event as any;
-						const active = se.eventId === selectedEventId;
-						const isFuture = new Date(se.occurredAt).getTime() > cursor;
+						// Handle both structures: se.event (nested) or se (flat)
+						const ev = (se as any).event || se;
+						const eventId = (se as any).eventId || (se as any)._id;
+						const occurredAt = (se as any).occurredAt || (se as any)._storedAt;
+						
+						if (!ev || !ev.type) return null; // Skip invalid events
+						
+						const active = eventId === selectedEventId;
+						const isFuture = new Date(occurredAt).getTime() > cursor;
 						return (
 							<div
-							key={se.eventId}
+							key={eventId}
 							onClick={() => selectStoredEvent(se)}
 							style={{
 								cursor: "pointer",
@@ -495,7 +522,7 @@ export default function Home() {
 							>
 							<div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
 								<span><b>{ev.type}</b> {ev.carId ? `· ${ev.carId}` : ""}{ev.spotId ? ` · ${ev.spotId}` : ""}</span>
-								<span style={{ opacity: 0.7 }}>{new Date(se.occurredAt).toLocaleTimeString()}</span>
+								<span style={{ opacity: 0.7 }}>{new Date(occurredAt).toLocaleTimeString()}</span>
 							</div>
 							</div>
 							);

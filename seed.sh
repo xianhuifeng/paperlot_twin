@@ -50,7 +50,6 @@ post () {
 
 A="b${BATCH}_carA"
 B="b${BATCH}_carB"
-C="b${BATCH}_carC"
 
 # ---- carA: drive -> park S3 -> stay -> leave ----
 post "$BASE/api/commands/carEnter" "{\"lotId\":\"$LOT\",\"carId\":\"$A\",\"pos\":{\"x\":10,\"y\":60},\"occurredAt\":\"$(iso 0)\"}"
@@ -72,13 +71,5 @@ post "$BASE/api/commands/spotVacate" "{\"lotId\":\"$LOT\",\"carId\":\"$B\",\"spo
 post "$BASE/api/commands/carMove"  "{\"lotId\":\"$LOT\",\"carId\":\"$B\",\"from\":{\"x\":44,\"y\":42},\"to\":{\"x\":90,\"y\":75},\"occurredAt\":\"$(iso 18)\"}"
 post "$BASE/api/commands/carExit"  "{\"lotId\":\"$LOT\",\"carId\":\"$B\",\"occurredAt\":\"$(iso 20)\"}"
 
-# ---- carC: short visit -> park S8 -> leave ----
-post "$BASE/api/commands/carEnter" "{\"lotId\":\"$LOT\",\"carId\":\"$C\",\"pos\":{\"x\":92,\"y\":75},\"occurredAt\":\"$(iso 5)\"}"
-post "$BASE/api/commands/carMove"  "{\"lotId\":\"$LOT\",\"carId\":\"$C\",\"from\":{\"x\":92,\"y\":75},\"to\":{\"x\":80,\"y\":42},\"occurredAt\":\"$(iso 7)\"}"  # 贴近 S8
-post "$BASE/api/commands/spotOccupy" "{\"lotId\":\"$LOT\",\"carId\":\"$C\",\"spotId\":\"S8\",\"occurredAt\":\"$(iso 8)\"}"
-# 停留 4 秒
-post "$BASE/api/commands/spotVacate" "{\"lotId\":\"$LOT\",\"carId\":\"$C\",\"spotId\":\"S8\",\"occurredAt\":\"$(iso 12)\"}"
-post "$BASE/api/commands/carExit"  "{\"lotId\":\"$LOT\",\"carId\":\"$C\",\"occurredAt\":\"$(iso 13)\"}"
-
-echo "Seeded parking story batch=$BATCH (A->S3, B->S6, C->S8)"
+echo "Seeded parking story batch=$BATCH (A->S3, B->S6)"
 echo "Check: $BASE/api/query/events?lotId=$LOT"

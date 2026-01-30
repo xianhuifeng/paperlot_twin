@@ -1,44 +1,21 @@
 
 import type { LotEvent } from "@/domain/events";
+import { createJsonlEventStore } from "@/infra/eventStore.jsonl";
 
-export type StoredEvent = {
-  eventId: string;
-  streamId: string;
-  occurredAt: string;
-  createdAt: string;
-  event: LotEvent;
+
+export type StoredEvent<E = any> = E & {
+  _id: string;        // uuid
+  _seq: number;       // monotonically increasing
+  _storedAt: string;  // ISO
 };
 
-class InMemoryEventStore {
-  private events: StoredEvent[] = [];
-
-  append(lotId: string, event: LotEvent): StoredEvent {
-    const stored: StoredEvent = {
-      eventId: crypto.randomUUID(),
-      streamId: lotId,
-      occurredAt: event.occurredAt,
-      createdAt: new Date().toISOString(),
-      event
-    };
-    this.events.push(stored);
-    this.events.sort((a, b) =>
-      new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
-    );
-    return stored;
-  }
-
-  queryByTime(lotId: string, from?: string, to?: string): StoredEvent[] {
-    const fromT = from ? new Date(from).getTime() : -Infinity;
-    const toT = to ? new Date(to).getTime() : Infinity;
-    return this.events.filter(e =>
-      e.streamId === lotId &&
-      new Date(e.occurredAt).getTime() >= fromT &&
-      new Date(e.occurredAt).getTime() <= toT
-    );
-  }
+export interface EventStore<E = any> {
+  append(streamId: string, event: E): Promise<StoredEvent<E>>;
+  load(streamId: string): Promise<StoredEvent<E>[]>;
+  queryByTime(streamId: string, from?: string, to?: string): StoredEvent<E>[];
 }
 
-export const eventStore = new InMemoryEventStore();
+export const eventStore = createJsonlEventStore();
 
 // src/infra/eventStore.ts
 import { randomUUID } from "crypto";
